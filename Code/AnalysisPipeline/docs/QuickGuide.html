@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>QuickGuide.md</title>
+<style>
+@page { margin: 0.45in 0.55in; }
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color: #1a1a1a;
+  font-size: 8.3pt;
+  line-height: 1.22;
+  max-width: 100%;
+}
+h1 {
+  font-size: 15pt;
+  margin: 0 0 3pt 0;
+  padding-bottom: 3pt;
+  border-bottom: 2px solid #1f4e79;
+  color: #1f4e79;
+}
+h2 {
+  font-size: 10pt;
+  margin: 7pt 0 2pt 0;
+  padding-bottom: 1pt;
+  border-bottom: 1px solid #c9d6e3;
+  color: #1f4e79;
+}
+p { margin: 2pt 0; }
+ul, ol { margin: 2pt 0 4pt 0; padding-left: 15pt; }
+li { margin: 0.5pt 0; }
+strong { color: #111; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 7.6pt;
+  background: #f0f2f5;
+  padding: 0px 3px;
+  border-radius: 2px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 3pt 0 4pt 0;
+  font-size: 7.4pt;
+}
+th, td {
+  border: 1px solid #d5dae1;
+  padding: 2pt 4pt;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #eaf0f6;
+  color: #1f4e79;
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: #fafbfc; }
+a { color: #1f4e79; }
+em { color: #444; }
+</style></head>
+<body><h1>Analysis Pipeline — Quick Guide</h1>
+<p>A MATLAB app for analyzing single-molecule binding/FRET data: detects binding
+events from a state-assignment file, then offers twelve modules covering
+kinetics, FRET distributions, and conformational statistics.</p>
+<h2>Running the app</h2>
+<p>Requires MATLAB with the <strong>Curve Fitting</strong> and <strong>Statistics and Machine
+Learning</strong> Toolboxes. The folder with <code>AnalysisPipelineApp.m</code> and the
+<code>+modules</code>/<code>+pipeline</code> folders must be on the MATLAB path — either <code>cd</code>
+there for the session, or (recommended) add it permanently via
+<strong>Home → Set Path...</strong>. If this app lives inside your lab's shared
+<code>MatlabScripts</code> directory, make sure <code>MatlabScripts</code> has been added via
+<strong>Set Path...</strong> so the app is callable from any Current Folder. Then in the
+Command Window run: <code>AnalysisPipelineApp</code> — this opens the GUI (no arguments
+needed). Use <code>app = AnalysisPipelineApp();</code> instead if you want a handle to
+the running app for scripting.</p>
+<h2>Getting started</h2>
+<ol>
+<li><strong>Load data.</strong> Click <strong>Load State-Assignment File...</strong> and pick a
+   <code>*_assigned_corrected.mat</code> file (must contain <code>states</code>, <code>ttotal</code>,
+   <code>channelNames</code>, <code>nChPerMol</code>; older files with only <code>ttotal</code> and <code>states</code>
+   open as 2-color data). The app detects binding events per channel
+   automatically.</li>
+<li><strong>(Optional) Set Min event frames</strong> to drop events shorter than a chosen
+   number of frames — useful for filtering out one-frame noise spikes.</li>
+<li><strong>Click a module button</strong> in the left sidebar (<strong>Analysis</strong> or
+   <strong>Plotting</strong>) to open its tab.</li>
+<li><strong>Adjust the controls</strong> at the top of the tab (Channel, Events, etc.) —
+   most modules recompute live as you change them.</li>
+<li><strong>Fit, export a plot, and/or export a CSV</strong> as needed (see below).</li>
+</ol>
+<h2>Fit vs. Save Fit vs. Export CSV</h2>
+<p>Modules with curve fitting (exponential or Gaussian-mixture) share one
+pattern: <strong>Fit</strong> is a <em>trial</em> — it draws the curve and shows the fitted
+parameters but logs nothing. <strong>Save Fit</strong> re-runs the same fit and <em>also</em>
+runs a bootstrap confidence interval, then appends one row to that module's
+own results table. <strong>Export CSV...</strong> saves that table. Every module's table
+is independent: no module's fits ever mix into another module's export.</p>
+<h2>Confidence intervals</h2>
+<p>Most parameters carry two possible CIs: a <strong>Fit CI</strong> (from the curve fit's
+own covariance estimate) and a <strong>Bootstrap CI</strong> (from resampling molecules
+with replacement many times and refitting — see the User Guide for why
+resampling is done by <em>molecule</em>, not by event). Both are 95% intervals,
+reported in CSVs as a single <code>[lower, upper]</code> column.</p>
+<h2>Modules</h2>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Category</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Binding Lifetime Kinetics</td>
+<td>Analysis</td>
+<td>Single/double-exponential fit to the eCDF of event lifetimes</td>
+</tr>
+<tr>
+<td>Association Kinetics</td>
+<td>Analysis</td>
+<td>Same fit, applied to first-association / reassociation wait times</td>
+</tr>
+<tr>
+<td>FRET Efficiency Distribution</td>
+<td>Analysis</td>
+<td>1–4 component Gaussian-mixture fit to a pooled FRET histogram</td>
+</tr>
+<tr>
+<td>FRET State Lifetime</td>
+<td>Analysis</td>
+<td>Same exponential-fit machinery as Binding Lifetime, split by Low/High FRET state</td>
+</tr>
+<tr>
+<td>Association/Dissociation Conformations</td>
+<td>Analysis</td>
+<td>Does FRET state predict dissociation risk or onset composition? (mixed-effects logistic regression + bootstrap)</td>
+</tr>
+<tr>
+<td>Event Sorting by Mean FRET</td>
+<td>Analysis</td>
+<td>Splits events into Low/High groups by mean FRET; compares group lifetimes (points + bootstrap CI + rank-sum test)</td>
+</tr>
+<tr>
+<td>Event Sorting by Lifetime</td>
+<td>Analysis</td>
+<td>Splits events into Short/Long groups by lifetime; compares group FRET distributions (Gaussian-mixture fits)</td>
+</tr>
+<tr>
+<td>Donor-Acceptor Correlation</td>
+<td>Analysis</td>
+<td>Within-event donor/acceptor intensity Pearson r as a FRET sanity check (histogram, points + bootstrap CI, pooled D-vs-A scatter)</td>
+</tr>
+<tr>
+<td>Post-Sync FRET Heatmap</td>
+<td>Plotting</td>
+<td>Time × FRET-efficiency density heatmap, traces aligned to binding onset</td>
+</tr>
+<tr>
+<td>FRET Evolution</td>
+<td>Plotting</td>
+<td>Individual per-event FRET trajectories right after binding onset</td>
+</tr>
+<tr>
+<td>Combined Dataset Overlay</td>
+<td>Plotting</td>
+<td>Overlays previously-exported <code>.fig</code> plots from different sessions/samples into one figure</td>
+</tr>
+<tr>
+<td>Summary Figure</td>
+<td>Plotting</td>
+<td>Auto-detects every module's previously-exported <code>.png</code> plots in a chosen folder and composites them into one multi-panel page for a fast overview</td>
+</tr>
+</tbody>
+</table>
+<h2>Exporting plots</h2>
+<p>Every analysis module has an <strong>Export Plot...</strong> button producing a
+publication-style <code>.eps</code> + <code>.png</code> + <code>.fig</code> set (square or landscape panel,
+transparent background, consistent fonts/line weights) via a shared house
+style — <code>.fig</code> files exported this way can later be combined in <strong>Combined
+Dataset Overlay</strong>, and the <code>.png</code> files can be pulled together automatically
+by <strong>Summary Figure</strong>.</p>
+<p><em>For details on the statistics, exact CSV columns, and how to interpret each
+module's output, see the full User Guide.</em></p>
+</body></html>

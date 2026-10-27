@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>UserGuide.md</title>
+<style>
+@page { margin: 0.7in 0.75in; }
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color: #1a1a1a;
+  font-size: 10.3pt;
+  line-height: 1.45;
+  max-width: 100%;
+}
+h1 {
+  font-size: 19pt;
+  margin: 0 0 4pt 0;
+  padding-bottom: 6pt;
+  border-bottom: 2.5px solid #1f4e79;
+  color: #1f4e79;
+  page-break-after: avoid;
+}
+h2 {
+  font-size: 14pt;
+  margin: 20pt 0 6pt 0;
+  padding-bottom: 3pt;
+  border-bottom: 1px solid #c9d6e3;
+  color: #1f4e79;
+  page-break-after: avoid;
+  page-break-before: always;
+}
+h3 {
+  font-size: 11.5pt;
+  margin: 12pt 0 4pt 0;
+  color: #2c2c2c;
+  page-break-after: avoid;
+}
+p { margin: 5pt 0; }
+ul, ol { margin: 4pt 0 8pt 0; padding-left: 20pt; }
+li { margin: 2pt 0; }
+strong { color: #111; }
+hr { border: none; border-top: 1px solid #d8d8d8; margin: 14pt 0; }
+
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9pt;
+  background: #f0f2f5;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+pre {
+  background: #f5f6f8;
+  border: 1px solid #e0e3e8;
+  border-left: 3px solid #1f4e79;
+  border-radius: 3px;
+  padding: 8pt 10pt;
+  margin: 6pt 0 10pt 0;
+  page-break-inside: avoid;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 9pt;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: block;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6pt 0 12pt 0;
+  font-size: 9pt;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #d5dae1;
+  padding: 4pt 7pt;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #eaf0f6;
+  color: #1f4e79;
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: #fafbfc; }
+
+img {
+  max-width: 100%;
+  display: block;
+  margin: 8pt auto;
+  border: 1px solid #d5dae1;
+  border-radius: 3px;
+  page-break-inside: avoid;
+}
+
+a { color: #1f4e79; }
+</style></head>
+<body><h1>Analysis Pipeline — User Guide</h1>
+<p>This guide covers every module in the Analysis Pipeline app in depth: how to
+use it, what it reports, the statistics behind it and why they're
+appropriate, and how to read its exported output. For a one-page overview,
+see the Quick Guide instead.</p>
+<h2>1. Running the app</h2>
+<p><strong>Requirements.</strong> MATLAB (developed against R2023b) with two toolboxes:</p>
+<ul>
+<li><strong>Curve Fitting Toolbox</strong> — every exponential and Gaussian-mixture fit in
+  the app goes through this (<code>fit</code>, <code>fittype</code>, <code>confint</code>).</li>
+<li><strong>Statistics and Machine Learning Toolbox</strong> — <code>cdfcalc</code> (used by every
+  eCDF-based module), <code>fitglme</code> and <code>ranksum</code> (Association/Dissociation
+  Conformations and Event Sorting by Mean FRET).</li>
+</ul>
+<p>No other toolboxes are required — the heatmap smoothing step deliberately
+avoids the Image Processing Toolbox.</p>
+<p><strong>To launch the app:</strong></p>
+<ol>
+<li>Open MATLAB.</li>
+<li>Make sure the folder containing <code>AnalysisPipelineApp.m</code> and the
+   <code>+modules</code>/<code>+pipeline</code> package folders is on the MATLAB path. This app's
+   modules are MATLAB packages (<code>modules.*</code>, <code>pipeline.*</code>); MATLAB won't
+   find them unless their <em>parent</em> folder — not <code>+modules</code>/<code>+pipeline</code>
+   themselves — is on the path. For a single session, set your MATLAB
+   <strong>Current Folder</strong> to that folder. <strong>Permanently (recommended)</strong>: add it
+   to your saved path once via <strong>Home → Set Path...</strong> (or run <code>pathtool</code>,
+   or call <code>addpath('...'); savepath;</code> in the Command Window) so it's
+   available every time you open MATLAB, with no need to navigate there
+   first. If this app is installed inside your lab's shared <code>MatlabScripts</code>
+   directory, make sure <code>MatlabScripts</code> has been added to the path this way
+   (via <strong>Set Path...</strong>, not just left in a folder you happen to <code>cd</code> into)
+   — that's what makes the app callable from any Current Folder.</li>
+<li>In the Command Window, type <code>AnalysisPipelineApp</code> and press Enter. This
+   calls the class constructor and opens the GUI window — no arguments
+   needed.</li>
+<li>To keep a handle to the running app instance instead (useful for
+   scripting, or inspecting <code>app.Data</code>/<code>app.ResultLogs</code> directly from the
+   Command Window while the GUI is open), assign it to a variable instead:
+   <code>app = AnalysisPipelineApp();</code></li>
+</ol>
+<p>The window opens with every module button visible; all but <strong>Combined
+Dataset Overlay</strong> stay disabled until you load a state-assignment file (§2).</p>
+<h2>2. Data and general workflow</h2>
+<h3>Input file</h3>
+<p>The app loads a single <code>.mat</code> file (conventionally named
+<code>*_assigned_corrected.mat</code>) containing:</p>
+<ul>
+<li><code>ttotal</code> — a <code>[frames × (1 + nChPerMol·molecules)]</code> matrix: column 1 is
+  the time axis (seconds), and each molecule occupies <code>nChPerMol</code>
+  consecutive columns (one per channel) after that.</li>
+<li><code>states</code> — the same shape as <code>ttotal</code>, giving each channel's discrete
+  state assignment (e.g. ON/OFF) per frame.</li>
+<li><code>channelNames</code> — the name of each of the <code>nChPerMol</code> channels, in column
+  order.</li>
+<li><code>nChPerMol</code> — number of channels per molecule.</li>
+</ul>
+<p><strong>Older files (backwards compatibility).</strong> Files from before multi-color
+support contain only <code>ttotal</code> and <code>states</code>. If a file has those two
+variables and <em>neither</em> <code>channelNames</code> nor <code>nChPerMol</code>, the app treats it
+as 2-color data with three channels per molecule — <code>donor</code>, <code>acceptor</code>,
+<code>fret</code> — and notes this in the status log. It first checks that <code>ttotal</code>
+and <code>states</code> are the same size and that the number of data columns (all
+columns after the time column) is a multiple of 3; if not, it shows an
+error instead of guessing. A file with only <em>one</em> of <code>channelNames</code> /
+<code>nChPerMol</code> is not treated as old-format and is rejected as missing
+required variables. The file dialog therefore lists every <code>.mat</code> file, not
+only <code>*_assigned_corrected.mat</code>; extra variables in a file are ignored.</p>
+<p>On load, the app scans every channel for a detectable ON level and extracts
+<strong>binding events</strong>: continuous runs of frames where a channel is in its ON
+state. Each event records which molecule it belongs to, its start/end
+frame, start/end time, and lifetime (duration in seconds). Every analysis
+module operates on this event list. <strong>Min event frames</strong> (on the main
+window) discards events shorter than a chosen number of frames before any
+module sees them — useful for filtering single-frame noise spikes that
+aren't real binding events.</p>
+<h3>Event filters</h3>
+<p>Most modules offer an <strong>Events</strong> dropdown with three choices, used the
+same way everywhere:</p>
+<ul>
+<li><strong>All events</strong> — every detected event.</li>
+<li><strong>First event</strong> — only the first event per molecule.</li>
+<li><strong>Subsequent events</strong> — every event after the first, per molecule.</li>
+</ul>
+<p>This distinction matters statistically: "All events" and "Subsequent
+events" can include multiple events from the same molecule, which is the
+reason several modules resample by <em>molecule</em> rather than by <em>event</em> when
+computing confidence intervals (see below).</p>
+<h3>Fit, Save Fit, and result logs</h3>
+<p>Every curve-fitting module (exponential or Gaussian-mixture) follows the
+same pattern:</p>
+<ul>
+<li><strong>Fit</strong> runs the point-estimate fit and draws the curve — a quick trial
+  you can repeat with different guesses or settings. It logs nothing.</li>
+<li><strong>Save Fit</strong> re-runs that same fit and <em>additionally</em> runs a bootstrap
+  (see below) to get a confidence interval on the fitted parameters, then
+  appends one row to that module's own result table.</li>
+<li><strong>Export CSV...</strong> saves that module's own table. Every module's result
+  table is completely independent — no module's fits ever mix into another
+  module's CSV, so each exported file has a clean, consistent column set.</li>
+</ul>
+<p>Because Save Fit always reflects the <em>most recent</em> Fit, changing a control
+that changes the underlying data (channel, event filter, etc.) disables
+Save Fit until you click Fit again — this prevents accidentally logging a
+fit for data that's no longer what's on screen.</p>
+<h3>Bootstrap confidence intervals: why resample by molecule</h3>
+<p>Every bootstrap CI in this app is a <strong>molecule-level cluster bootstrap</strong>:
+each resample draws <em>M</em> molecules with replacement (<em>M</em> = number of
+distinct molecules in the data being fit) and includes <strong>all</strong> of that
+molecule's events/frames, then refits from scratch. The module repeats this
+many times (the "Bootstrap N" you set); the CI is the 2.5th/97.5th
+percentile of the resulting distribution of fitted parameters.</p>
+<p>This is deliberate, not incidental: events (or frames) from the <em>same</em>
+molecule aren't statistically independent observations — molecule-to-molecule
+kinetic heterogeneity is common in single-molecule data, so a molecule that
+happens to contribute several events shouldn't get to "vote" several times
+as if each vote were independent. Plain event-level resampling would treat
+every event as an independent draw and understate the true uncertainty
+whenever a molecule contributes more than one event — exactly the case for
+the "All events" and "Subsequent events" filters. For "First event" filters
+(exactly one event per molecule by construction), molecule-level and
+event-level resampling are mathematically identical, so it's always safe to
+resample by molecule regardless of which filter is active.</p>
+<p>For fits with more than one component (a double exponential, or a
+multi-Gaussian mixture), the module matches each bootstrap iteration's
+fitted components back to the original point estimate's components (by
+whichever labeling minimizes total distance) before pooling them —
+otherwise a model
+that's symmetric under swapping components ("label switching") could mix
+two physically distinct populations into one nonsensical pooled
+distribution.</p>
+<h3>Fit CI vs. Bootstrap CI</h3>
+<p>Two different confidence intervals appear throughout this app, and they
+answer different questions:</p>
+<ul>
+<li><strong>Fit CI</strong> comes directly from the curve fit's own asymptotic covariance
+  estimate (the same thing MATLAB's <code>confint()</code> reports). It's essentially
+  free to compute, but relies on standard nonlinear-regression assumptions
+  (large enough sample size, a correctly specified model, reasonably
+  well-behaved residuals) that may not hold well for a rough or sparse
+  dataset.</li>
+<li><strong>Bootstrap CI</strong> comes from the molecule-level resampling procedure above.
+  It's nonparametric (no asymptotic-normality assumption) and correctly
+  accounts for molecule-level clustering, but costs more to compute and
+  depends on having enough distinct molecules to resample from meaningfully.</li>
+</ul>
+<p>Both appear wherever available; in CSV exports each is its own single
+column formatted as <code>[lower, upper]</code> (see <code>pipeline.formatCI</code>), explicitly
+labeled <code>_FitCI</code> or <code>_BootstrapCI</code> — never abbreviated to bare Lower/Upper
+columns, so it's always unambiguous which kind of interval a given column
+is.</p>
+<h3>Exporting plots</h3>
+<p>Every module's <strong>Export Plot...</strong> button writes a matched <code>.eps</code> + <code>.png</code> +
+<code>.fig</code> set with one consistent house style: a fixed-size square or
+landscape panel, transparent background (white background for <code>.fig</code>,
+since a truly transparent <code>.fig</code> renders as solid black if you ever open it
+directly), gray axis lines, and consistent font/line weights sized for
+direct use in a manuscript figure — no further tidying up needed. <code>.fig</code>
+files exported this way can be re-combined later in <strong>Combined Dataset
+Overlay</strong> (see below).</p>
+<h2>3. Binding Lifetime Kinetics</h2>
+<p><img alt="Binding Lifetime Kinetics" src="images/01_binding_lifetime_kinetics.png" /></p>
+<p><strong>Purpose.</strong> How fast does a bound complex dissociate? Fits an exponential
+decay to the distribution of event lifetimes (how long each binding event
+lasted).</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and an <strong>Events</strong> filter. The plot
+updates immediately, showing the empirical CDF (eCDF) of that channel's
+event lifetimes. Choose <strong>Single exponential</strong> or <strong>Double exponential</strong>
+under Fit type, optionally adjust the rate guesses (<code>b0</code>, and <code>d0</code> for a
+double exponential) if the default doesn't converge well, and click <strong>Fit</strong>.
+When satisfied, click <strong>Save Fit</strong> to log the result with its bootstrap CI.</p>
+<p><strong>What it reports.</strong> The plot is the eCDF (open circles) with the fitted
+curve overlaid (black line). The Kinetics panel below shows the fitted
+coefficients, their Fit CIs, and R².</p>
+<h3>Why single-molecule dwell times need a distribution, not a single measurement</h3>
+<p>Single-molecule dwell times are random in two distinct, compounding ways,
+and both are why this module fits a whole distribution of lifetimes rather
+than simply reporting an average.</p>
+<p><strong>The underlying process is stochastic.</strong> Dissociation isn't a scheduled,
+deterministic event — it's a thermally-driven transition, and only a
+constant probability per unit time governs when it happens. Two molecules in
+<em>identical</em> chemical environments, with <em>identical</em> true rate constants,
+will still dissociate at different, unpredictable times, because the
+process itself is random — not because of experimental imprecision. That
+randomness is a real physical feature of the system under study, not
+noise to correct away; it's exactly what the exponential model below
+describes. A direct consequence: a single event's lifetime carries almost
+no information about the underlying rate on its own (a fast-dissociating
+population can still occasionally produce one long-lived event, and vice
+versa) — only the <em>shape of the distribution</em> across many events lets you
+recover the rate constant reliably, which is why this module always needs
+an eCDF built from many events, never a single measurement.</p>
+<p><strong>The observed sample is itself a random draw.</strong> Separately, the specific
+set of binding events one experiment happens to capture — however many
+hundreds a recording session happens to yield — is only one particular random sample
+out of the much larger population of events this system could in principle
+produce. A different recording session, or the same session re-run, would
+capture a different set of events and, in general, a somewhat different
+eCDF and fitted rate, purely from sampling variation, even if nothing about
+the underlying biology changed. This is precisely the uncertainty that the
+Fit CI and Bootstrap CI (§2) exist to quantify — and why <code>NEvents</code> and
+<code>NMolecules</code> in every output table matter as a rough guide to how much that
+sampling uncertainty should shrink: more independent observations narrow
+the gap between what you happened to record and the true underlying
+distribution.</p>
+<h3>Why model dwell times as exponential?</h3>
+<p>Binding-event lifetimes — and, more generally, any single-molecule dwell
+time, such as how long a molecule stays bound or stays in a given
+conformational state — are conventionally modeled as <strong>exponentially
+distributed</strong>, for a concrete physical reason rather than mathematical
+convenience.</p>
+<p>If dissociation is an elementary, one-step process — the bound complex has
+a constant, time-independent probability <em>per unit time</em> of dissociating (a
+constant hazard rate <code>k</code>) — then the process is <strong>memoryless</strong>: the
+probability that the complex dissociates in the next instant doesn't depend
+on how long it has already been bound. This is a strong claim, and it turns
+out to uniquely determine the model: the exponential distribution is the
+<em>only</em> continuous probability distribution with the memoryless property.
+So "dissociation is a constant-rate (Poisson) process" and "dwell time is
+exponentially distributed" are exactly the same assumption, and it's the
+standard starting model for elementary single-molecule binding and
+conformational transitions.</p>
+<p>Two direct consequences follow:</p>
+<ul>
+<li>The survival function — the probability of still being bound after time
+  <code>t</code> — is <code>S(t) = exp(-kt)</code>, so the CDF (probability of <em>having</em>
+  dissociated by time <code>t</code>) is <code>F(t) = 1 - exp(-kt)</code>: exactly the
+  single-exponential model this module fits.</li>
+<li>If <strong>two</strong> distinct dissociation pathways or populations are present
+  (e.g. two conformations with different intrinsic off-rates that don't
+  interconvert quickly relative to the observation), the pooled dwell-time
+  distribution becomes a weighted mixture of two exponentials — exactly the
+  double-exponential model. A visibly poor single-exponential fit
+  (systematic deviation between the data and the fitted curve, not just
+  random scatter) is itself informative: it's evidence of kinetic
+  heterogeneity worth modeling with a second rate, not merely a fitting
+  nuisance to work around.</li>
+</ul>
+<h3>Why fit the eCDF, not a histogram?</h3>
+<p>The empirical CDF (<code>cdfcalc</code>) is a <strong>nonparametric estimator of the true
+CDF that requires no binning decision at all</strong> — every recorded dwell time
+contributes exactly one step, at its own exact (quantized) value. A
+histogram, by contrast, needs a bin-width choice that can visibly change
+the apparent shape, especially with a limited number of events, and that
+choice can end up implicitly weighting the fit toward whichever bins happen
+to catch more or fewer points. Fitting the parametric exponential CDF
+directly against the eCDF avoids that arbitrary choice, uses every data
+point exactly once with no information loss from binning, and directly
+matches the mathematical form of the underlying model — a CDF fit against a
+CDF, rather than requiring an intermediate probability-density comparison.</p>
+<p><strong>The math.</strong> The module first snaps ("quantizes") lifetimes onto the
+movie's frame-exposure grid, which avoids floating-point noise in the
+recorded timestamps from making numerically-identical durations look like
+distinct values. It then fits the eCDF of the quantized lifetimes
+<strong>directly</strong> (not a histogram, and not the survival function) with:</p>
+<pre><code>Single exponential:  y = 1 - exp(-b·(x+f))                                    [a fixed = 1]
+Double exponential:  y = a·(1 - exp(-b·(x+f))) + (1-a)·(1 - exp(-d·(x+f)))
+</code></pre>
+<ul>
+<li><code>b</code>, <code>d</code> — rate constants (s⁻¹). <code>b</code> is always the faster-fitted rate.</li>
+<li><code>a</code> — the fraction of the population following rate <code>b</code> (the rest, <code>1-a</code>,
+  follows <code>d</code>). Fixed at 1 for a single exponential (there's no second
+  population to split against).</li>
+<li><code>f</code> — an unconstrained time offset that absorbs small, systematic timing
+  discrepancies; not meant to be physically interpreted on its own.</li>
+</ul>
+<p><strong>Is the dissociation rate concentration-independent?</strong> Usually, yes.
+Dissociation is typically a unimolecular process intrinsic to the bound
+complex, so <code>b</code>/<code>d</code> (<code>koff</code>) shouldn't depend on ligand
+concentration the way an association rate does (see §4, where binding's
+inherently bimolecular nature is discussed) — a bound complex falling apart
+doesn't need another ligand molecule to show up first. But this isn't an
+absolute rule: <em>facilitated</em> (or <em>catalyzed</em>) <em>dissociation</em> — where a
+competing free ligand in solution actively accelerates unbinding by
+transiently forming a ternary complex — is a real, documented mechanism in
+some systems (well known for transcription-factor–DNA interactions, for
+example). If a fitted <code>Rate1_perSec</code>/<code>Rate2_perSec</code> changes noticeably with
+ligand concentration across otherwise-identical experiments, that's worth
+taking as a real result, not a fitting artifact — it's evidence the
+dissociation pathway isn't purely unimolecular here.</p>
+<p><strong>Why the bootstrap matters here specifically.</strong> The "All events" and
+"Subsequent events" filters routinely include several events from the same
+molecule, so the molecule-level cluster bootstrap described in §2 is what
+makes the reported Bootstrap CI trustworthy rather than overconfident.</p>
+<p><strong>Output guide</strong> (<code>Export CSV...</code>, one row per Save Fit):</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Module</code>, <code>Dataset</code>, <code>EventFilter</code></td>
+<td>Which module, channel, and event filter this row came from</td>
+</tr>
+<tr>
+<td><code>FitType</code></td>
+<td>"Single exponential" or "Double exponential"</td>
+</tr>
+<tr>
+<td><code>NEvents</code></td>
+<td>Number of events the fit was built from</td>
+</tr>
+<tr>
+<td><code>NMolecules</code></td>
+<td>Distinct molecules contributing those events (bootstrap resampling pool size)</td>
+</tr>
+<tr>
+<td><code>NBootstrap</code></td>
+<td>Number of bootstrap resamples that converged successfully</td>
+</tr>
+<tr>
+<td><code>Fraction_Rate1</code>, <code>Fraction_Rate1_FitCI</code></td>
+<td><code>a</code> and its Fit CI (blank/NaN for a single exponential)</td>
+</tr>
+<tr>
+<td><code>Rate1_perSec</code>, <code>..._FitCI</code>, <code>..._BootstrapCI</code></td>
+<td><code>b</code> and its two CIs</td>
+</tr>
+<tr>
+<td><code>Rate2_perSec</code>, <code>..._FitCI</code>, <code>..._BootstrapCI</code></td>
+<td><code>d</code> and its two CIs (blank/NaN for a single exponential)</td>
+</tr>
+<tr>
+<td><code>TimeOffset_sec</code>, <code>..._FitCI</code></td>
+<td><code>f</code> and its Fit CI</td>
+</tr>
+<tr>
+<td><code>R2</code></td>
+<td>Goodness of fit</td>
+</tr>
+</tbody>
+</table>
+<h2>4. Association Kinetics</h2>
+<p><img alt="Association Kinetics" src="images/02_association_kinetics.png" /></p>
+<p><strong>Purpose.</strong> How fast does association happen? Same exponential-CDF
+machinery as Binding Lifetime Kinetics, applied to the <em>waiting time before</em>
+a binding event rather than the event's own duration.</p>
+<p><strong>How to use it.</strong> Identical controls to Binding Lifetime Kinetics, except
+the <strong>Type</strong> dropdown chooses <strong>First association</strong> (time from the start of
+data collection until a molecule's first binding event) or
+<strong>Reassociation</strong> (time between the end of one binding event and the start
+of the next, i.e. re-binding wait times). Fit and Save Fit work exactly as
+described in §3.</p>
+<p><strong>What it reports / the math / the bootstrap.</strong> Identical to §3 — same
+model, same memoryless/constant-hazard rationale, same fitting approach,
+same molecule-level bootstrap reasoning (reassociation wait times in
+particular can have several per molecule).</p>
+<h3>What's intrinsically different about association?</h3>
+<p>The fitting machinery is identical to Binding Lifetime Kinetics, but
+association and dissociation aren't mirror images of the same physical
+process, and a few real differences are worth keeping in mind when
+interpreting a fitted rate here.</p>
+<p><strong>Association is bimolecular; dissociation typically isn't.</strong> Binding
+requires a free ligand and a free site to encounter each other by diffusion
+before they can associate, so the rate this module fits is a
+<em>pseudo-first-order</em> rate (<code>kobs = kon × [ligand]</code>, units s⁻¹) rather than
+the intrinsic bimolecular rate constant <code>kon</code> itself (units M⁻¹s⁻¹). That
+means two Association Kinetics fits from experiments run at different
+ligand concentrations aren't directly comparable without accounting for
+that difference — recovering <code>kon</code> itself requires dividing by the
+(approximately constant, pseudo-first-order) free-ligand concentration
+used. Dissociation doesn't need a second molecule to show up before it can
+happen, so it's usually — though not always — concentration-independent;
+see §3 for that caveat (facilitated dissociation) and how to spot it in
+your own fits.</p>
+<p><strong>"First association" silently excludes molecules that never bind.</strong> A
+molecule that's still waiting when the recording ends contributes no
+observation at all: unlike a censored dissociation event, which still
+contributes partial information, this molecule contributes none — it's
+simply absent from the eCDF. That's a survivorship-type bias: faster-associating molecules are
+systematically overrepresented among the events actually observed, which
+can bias the fitted rate upward if a meaningful fraction of molecules never
+bind within the recording window. This pairs with (but is distinct from)
+the frame-censoring discussed in §7 — there, an observed event is present
+but its <em>edge</em> is ambiguous; here, some fraction of the true population
+never produces an observed event at all.</p>
+<p><strong>Why the arbitrary start time is OK.</strong> Unlike dissociation — whose clock
+starts at a well-defined physical event, binding onset — "First
+association" starts the clock at an arbitrary point: whenever the
+recording happened to begin, which has nothing to do with how long that
+molecule had already been "waiting" beforehand. This is exactly where the
+memoryless property from §3 earns its keep: for a genuinely constant-rate
+process, the distribution of "time until the next event, starting from an
+arbitrary point" is the same exponential distribution regardless of when
+you start watching — so this arbitrary start time doesn't bias the fit, as
+long as the memoryless assumption itself holds.</p>
+<p><strong>Output guide.</strong> Same CSV schema as Binding Lifetime Kinetics (§3's
+table). The <code>EventFilter</code> column carries "First association" or
+"Reassociation" instead of the usual All/First/Subsequent labels, so a
+single exported file can hold rows for both if you fit each in turn.</p>
+<h2>5. FRET Efficiency Distribution</h2>
+<p><img alt="FRET Efficiency Distribution" src="images/03_fret_efficiency_distribution.png" /></p>
+<p><strong>Purpose.</strong> How many distinct FRET populations (conformations) are present
+while a channel is bound, and what's each one's mean efficiency, spread and
+population (share of the bound frames)?</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter. Choose the
+number of <strong>Gaussians</strong> (1–4); mean-guess fields appear for each component
+you've selected (initial guesses matter for multi-component fits — start
+from where you visually expect the peaks). Click <strong>Fit</strong>, then <strong>Save Fit</strong>
+to log it.</p>
+<p><strong>What it reports.</strong> The histogram (open circles) of pooled FRET values
+with the fitted mixture curve (black) overlaid. The Kinetics panel shows
+each component's mean, std and population, plus R². The on-plot label gives
+each mean with its population in parentheses, e.g. <code>Mean 1: 0.184 (6%)</code>;
+after Save Fit, the Kinetics panel adds each population's bootstrap CI.</p>
+<p><strong>The math.</strong> Every <strong>frame</strong> during a qualifying binding event contributes
+its FRET value — not one value per event, every frame of every event — into
+a 50-bin histogram spanning [0, 1], with bin heights normalized to sum to 1
+(this makes the shape comparable across datasets with different total
+frame counts; it is <em>not</em> a probability density). The module then fits a
+sum of 1–4 Gaussians to that histogram:</p>
+<pre><code>y = Σ aᵢ · exp(-((x - bᵢ)/cᵢ)²)     for i = 1..N
+</code></pre>
+<p><code>bᵢ</code> is component <em>i</em>'s mean; the reported standard deviation is
+<code>cᵢ/√2</code> (MATLAB's library Gaussian parameterization is not the same as <code>σ</code>
+directly, so the app converts it for you). The app always reports
+components sorted by ascending mean, so "component 1" consistently means the
+lowest-FRET population no matter what order the optimizer happened to
+converge in.</p>
+<p><strong>Populations.</strong> A component's population is its share of the fitted
+curve's total area, the fraction of bound frames it accounts for:</p>
+<pre><code>Population_i = a_i * c_i / (sum over all components j of a_j * c_j)
+</code></pre>
+<p>(each Gaussian's area is <code>a_i * c_i * sqrt(pi)</code>; the <code>sqrt(pi)</code> cancels). Populations sum to
+1, so a 1-Gaussian fit is always 100%. Because frames are pooled, this is a
+fraction of <em>time spent bound</em> in each FRET state, not a fraction of events
+or molecules: a state visited in long events weighs more than one visited in
+short events. The area counts each Gaussian's full tails, including any part
+that falls outside [0, 1].</p>
+<p>A population is a ratio of several fitted coefficients, so it has <strong>no Fit
+CI</strong>, only a <strong>Bootstrap CI</strong> (from the same molecule-level resamples, with
+the same label-switching matching as the means). A wide population CI
+usually means the components overlap enough that the data can't pin down
+how frames split between them: treat that split with caution even if the
+means look well defined.</p>
+<p><strong>Why NFrames, not just NEvents.</strong> Because the histogram pools every frame
+of every event, the number of data points it's built from (<code>NFrames</code>)
+is much larger than the number of underlying binding events (<code>NEvents</code>) —
+both are reported so you can judge statistical weight correctly: a
+distribution built from a few long events can have a large <code>NFrames</code> while
+still resting on very few independent molecules, which is exactly why
+<code>NMolecules</code> (the bootstrap's resampling pool size) is the number that
+matters most for judging how trustworthy the Bootstrap CI is.</p>
+<p><strong>Output guide</strong> (<code>Export CSV...</code>, one row per Save Fit):</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Module</code>, <code>Dataset</code>, <code>EventFilter</code>, <code>Group</code></td>
+<td>Which module/channel/filter; <code>Group</code> is blank here (only meaningful for Event Sorting by Lifetime, §9)</td>
+</tr>
+<tr>
+<td><code>FitType</code></td>
+<td>e.g. "2-Gaussian Mixture"</td>
+</tr>
+<tr>
+<td><code>NEvents</code></td>
+<td>True number of underlying binding events</td>
+</tr>
+<tr>
+<td><code>NFrames</code></td>
+<td>Number of pooled frames the histogram/fit was actually built from</td>
+</tr>
+<tr>
+<td><code>NMolecules</code></td>
+<td>Distinct molecules contributing (bootstrap resampling pool size)</td>
+</tr>
+<tr>
+<td><code>NBootstrap</code></td>
+<td>Number of bootstrap resamples that converged successfully</td>
+</tr>
+<tr>
+<td><code>Mean1..Mean4</code>, <code>..._FitCI</code>, <code>..._BootstrapCI</code></td>
+<td>Each component's mean and its two CIs (blank/NaN beyond the fitted component count)</td>
+</tr>
+<tr>
+<td><code>Std1..Std4</code>, <code>..._FitCI</code>, <code>..._BootstrapCI</code></td>
+<td>Each component's standard deviation and its two CIs</td>
+</tr>
+<tr>
+<td><code>Population1..Population4</code>, <code>..._BootstrapCI</code></td>
+<td>Each component's population as a fraction (0–1) of the fitted area, and its bootstrap CI (no Fit CI; see Populations above)</td>
+</tr>
+<tr>
+<td><code>R2</code></td>
+<td>Goodness of fit</td>
+</tr>
+</tbody>
+</table>
+<h2>6. FRET State Lifetime</h2>
+<p><img alt="FRET State Lifetime" src="images/06_fret_state_lifetime.png" /></p>
+<p><strong>Purpose.</strong> How long does a molecule stay in the Low- or High-FRET state
+once it enters it? Same exponential-CDF fitting as Binding Lifetime
+Kinetics, applied to <em>within-event</em> state dwell times rather than whole
+binding-event durations.</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter, then set the
+<strong>FRET Threshold</strong> and choose <strong>Low FRET state</strong> or <strong>High FRET state</strong>
+from the Type dropdown. The module classifies every bound frame as Low or
+High FRET against the threshold; consecutive same-classification runs
+within an event become dwell-time observations for whichever state you
+select. Fit and Save Fit work exactly as in §3.</p>
+<p><strong>What it reports / the math / the bootstrap.</strong> Identical fitting
+machinery to §3 (single/double exponential fit directly to the eCDF of
+dwell times, same memoryless/constant-hazard rationale, same molecule-level
+cluster bootstrap reasoning — a molecule can easily contribute several
+within-event state dwells).</p>
+<p><strong>Output guide.</strong> Same CSV schema as Binding Lifetime Kinetics (§3's
+table). <code>EventFilter</code> carries whichever combination of event-type filter
+and FRET state ("Low FRET state" / "High FRET state") was selected —
+switch the Type dropdown and fit again to log both states into the same
+file.</p>
+<h2>7. Association/Dissociation Conformations</h2>
+<p><img alt="Association/Dissociation Conformations" src="images/08_association_dissociation_conformations.png" /></p>
+<p><strong>Purpose.</strong> Does a channel's FRET state (conformation) at a given moment
+predict something about the binding event — either the immediate risk of
+dissociating (<strong>Dissociation</strong> view) or whether the event <em>started</em> in a
+particular conformation more or less often than chance/equilibrium
+(<strong>Association</strong> view)?</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong>, <strong>Events</strong> filter, and <strong>Type</strong>
+(Association or Dissociation). Set the <strong>FRET threshold</strong> (what counts as
+"high FRET"), the display <strong>Window</strong>, <strong>FRET bins</strong> and smoothing for the
+heatmap, and <strong>Bootstrap N</strong>, then click <strong>Run Analysis</strong> — unlike this
+app's other, live-refreshing modules, this one is gated behind an explicit
+button because it runs up to five mixed-effects model fits plus thousands
+of bootstrap resamples, which is too slow to re-run on every keystroke.
+Once run, the <strong>Stats for frame</strong> dropdown instantly switches which of the
+five swept frame positions the text panel describes (no recomputation).</p>
+<p><strong>What it reports.</strong> The <strong>Heatmap</strong> panel shows the full FRET-density
+time course around the aligned point (binding onset for Association,
+binding offset for Dissociation) — useful for spotting structure the
+five-point sweep alone might miss. The <strong>Frame-Sweep Result</strong> panel plots
+all five swept frame positions at once, each with a 95% bootstrap CI error
+bar; the text box below reports, for whichever frame you select in <strong>Stats
+for frame</strong>: the observed odds ratio and its GLMM p-value, the underlying
+probabilities/proportions with their bootstrap CIs, and (for Association)
+the comparison against both the aggregate equilibrium occupancy and an
+unbiased 50/50 reference.</p>
+<p><strong>The math — Dissociation.</strong> For five predictor-frame offsets (the
+terminal frame itself, then the 2nd/3rd/4th/5th-to-last frame), the module
+pairs every qualifying frame with whether dissociation occurred at the
+relevant later frame, then fits a <strong>mixed-effects logistic regression</strong>:</p>
+<pre><code>dissociate ~ highFRET + (1 | moleculeID) + (1 | eventID)
+</code></pre>
+<p>The fixed effect (<code>highFRET</code>) asks whether being above the FRET threshold
+changes the log-odds of dissociation, <em>after</em> accounting for
+molecule-to-molecule and event-to-event baseline variability via nested
+random intercepts. The reported odds ratio is <code>exp(β_highFRET)</code>.</p>
+<p><strong>The math — Association.</strong> The module samples the FRET value at each of
+an event's first five frames, then tests the observed fraction classified
+"high FRET" against two references via a random-intercept logistic model with a
+fixed offset (equivalent to a one-sample test against a target log-odds):
+the <strong>aggregate/equilibrium</strong> high-FRET occupancy (pooled across all
+frames, using the same hazard-data pool as the Dissociation view's
+2nd-to-last frame), and an <strong>unbiased 50%</strong> reference.</p>
+<h3>Exposure-time averaging at event edges, and why the module sweeps five frames</h3>
+<p>Both views have the same underlying measurement problem at the exact frame
+position they're aligned to — which is precisely why neither view relies on
+a single frame.</p>
+<p><strong>Why a camera frame can't pin down exactly when a transition happened.</strong>
+Each recorded frame isn't an instantaneous snapshot — it's a photon count
+integrated (averaged) over the entire exposure period (e.g. 20 ms).
+Binding and dissociation are effectively instantaneous, continuous-time
+events, so a transition can fall at <em>any</em> point within that 20 ms window
+relative to the frame boundaries, and the recording has no way to say where
+within the window it happened. If the true transition falls near the <em>end</em>
+of an exposure window, nearly the whole window still reflects the <em>old</em>
+state, and the recorded value stays dominated by it. If it falls near the
+<em>start</em> of the window, only a sliver of the exposure still reflects the old
+state, and the recorded value is instead dominated by the <em>new</em> state —
+even though the frame still gets classified (and counted) as belonging to
+whichever state technically applies for part of it. For the edge frames
+this module studies, that has a specific, predictable direction: since the
+unbound baseline sits at or near zero FRET, a blended frame's recorded FRET
+efficiency is always pulled <strong>artificially lower</strong> than the molecule's true
+bound-state value — never higher. That's exactly what confounds
+interpreting the FRET state right at binding onset or dissociation: a
+genuinely high-FRET conformation can misleadingly read as low-FRET in a
+blended edge frame, purely from a timing accident within one exposure
+window.</p>
+<p><strong>Dissociation: the terminal frame can be a blend of bound and unbound
+signal.</strong> Concretely, for a 20 ms exposure: if a molecule dissociates late
+in what would otherwise be its last bound frame — say 15 ms into the
+20 ms window — 15 ms (75%) of that exposure still reflects true bound-state
+signal, and the frame's reading stays close to the true bound conformation
+(reliable). If it instead dissociates early in that same window — say 5 ms
+in — only 5 ms (25%) reflects bound-state signal, whereas the remaining
+15 ms (75%) is already unbound baseline; the recorded value is pulled toward that
+baseline, reading an artificially <em>lower</em> FRET efficiency than the
+molecule's true bound-state value, even though the frame is (correctly)
+counted as the event's last ON frame. Because the exact position of the
+true dissociation instant within its exposure window is never recorded,
+there's no way to tell, from the data alone, which of these two situations
+produced any given "final" frame.</p>
+<p><img alt="Figure A — exposure blending at dissociation" src="images/diagram_dissociation_censoring.svg" /></p>
+<p><strong>Association: the same problem, mirrored, at binding onset.</strong> The
+identical mechanism applies at the <em>start</em> of an event: whichever exposure
+window contains the true binding instant is a blend of unbound and bound
+signal. If binding happens early in the window — say 1 ms into a 20 ms
+exposure — 19 ms (95%) of that window reflects the true bound state, a
+reliable reading. If binding happens late — say 15 ms in — only 5 ms (25%)
+does, whereas the preceding 15 ms (75%) is still unbound baseline; the
+recorded value is pulled toward that baseline, reading an artificially
+<em>lower</em> FRET efficiency than the molecule's true bound-state value, even
+though it's (correctly) the first frame flagged as bound. As with
+dissociation, there's no way to tell from the data which situation produced
+any given "first" frame.</p>
+<p><img alt="Figure B — exposure blending at binding onset" src="images/diagram_association_censoring.svg" /></p>
+<p><strong>Why sweep five frames instead of trusting one.</strong> This is exactly why the
+module never relies on the very first or very last frame alone. Every frame
+<em>after</em> the first (or <em>before</em> the last) has its <em>entire</em> exposure window
+falling cleanly within one true state — no blending, no ambiguity — so only
+the single frame immediately adjacent to the transition is ever affected.
+Sweeping across <strong>five</strong> frame positions in each view (the edge frame plus
+four more, stepping inward) and fitting/testing <strong>each one independently</strong>
+turns this into something you can directly check rather than something you
+have to take on faith: if the reported effect (the odds ratio, or the
+onset-composition deviation) is a real kinetic feature, it should show up
+consistently from the second position onward; if it's an artifact of
+exposure blending at the very edge, it will typically be strong only at the
+first/terminal position and disappear from the second position on. This is
+also why the app defaults <strong>Stats for frame</strong> to the <strong>second</strong> position
+rather than the first/terminal one — a deliberately conservative default
+that sidesteps the one frame most likely to be blended, while keeping the
+full five-point sweep visible on the plot for you to inspect directly.</p>
+<p><strong>Why mixed-effects, and why bootstrap on top of it.</strong> Frames from the same
+molecule or the same event are not independent observations — a molecule
+with a long-lived conformational preference will show correlated FRET
+readings across many frames. The nested random intercepts absorb that
+baseline correlation so the fixed effect reflects the population-level
+relationship rather than being distorted by pseudoreplication. Independent
+of the GLMM's own (asymptotic) p-values, a molecule-level cluster bootstrap
+(same resampling principle as §2) gives a nonparametric CI directly on the
+observed proportions, which doesn't rely on the GLMM's assumptions holding.</p>
+<p><strong>Output guide.</strong> This module predates the app's shared per-module result
+log and keeps its own independent CSV (<code>Export CSV...</code>), with one row per
+swept frame position (five per export). <strong>The Stats panel shows the odds
+ratio and GLMM p-value, but the CSV doesn't include them</strong> — the CSV
+covers only the bootstrap-based observed-proportion summary described
+below; read the odds ratio/p-value from the on-screen panel if you need
+them recorded elsewhere.</p>
+<p><em>Dissociation CSV columns:</em></p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Sample</code>, <code>Analyzed events</code>, <code>Frame Analyzed</code></td>
+<td>Channel, event filter, and which of the five predictor-frame offsets this row is</td>
+</tr>
+<tr>
+<td><code>Threshold</code>, <code>bootstraps</code></td>
+<td>FRET threshold and bootstrap N used</td>
+</tr>
+<tr>
+<td><code># complexes</code>, <code># events</code></td>
+<td>Distinct molecules / events contributing</td>
+</tr>
+<tr>
+<td><code>high FRET (HF) rate</code>, <code>HF rate 95% BootstrapCI</code></td>
+<td>Observed per-frame dissociation probability on high-FRET frames, with bootstrap CI</td>
+</tr>
+<tr>
+<td><code>Low FRET (LF) rate</code>, <code>LF rate 95% BootstrapCI</code></td>
+<td>Same, for low-FRET frames</td>
+</tr>
+<tr>
+<td><code>LF/HF Rate ratio</code>, <code>ratio 95% BootstrapCI</code></td>
+<td>Ratio of the two rates, with bootstrap CI</td>
+</tr>
+</tbody>
+</table>
+<p><em>Association CSV columns:</em></p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Sample</code>, <code>Analyzed events</code>, <code>Frame Analyzed</code></td>
+<td>Channel, event filter, and which of the five onset-frame positions this row is</td>
+</tr>
+<tr>
+<td><code>Threshold</code>, <code>bootstraps</code></td>
+<td>FRET threshold and bootstrap N used</td>
+</tr>
+<tr>
+<td><code># complexes</code>, <code># events</code></td>
+<td>Distinct molecules / events contributing</td>
+</tr>
+<tr>
+<td><code>Start in high FRET</code></td>
+<td>Count of events classified high-FRET at this onset frame</td>
+</tr>
+<tr>
+<td><code>high FRET ratio</code>, <code>high FRET ratio 95% BootstrapCI</code></td>
+<td>Observed proportion and its bootstrap CI</td>
+</tr>
+<tr>
+<td><code>Aggregate (equilibrium) Occupancy, high FRET</code></td>
+<td>The equilibrium reference this row's proportion is compared against</td>
+</tr>
+</tbody>
+</table>
+<h2>8. Event Sorting by Mean FRET</h2>
+<p><img alt="Event Sorting by Mean FRET" src="images/09_event_sorting_by_mean_fret.png" /></p>
+<p><strong>Purpose.</strong> Splits binding events into Low/High groups by their <strong>mean
+FRET efficiency</strong>, then asks: do the two groups differ in how long the
+binding lasts?</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter, then set <strong>Low
+bound (≤)</strong> and <strong>High bound (≥)</strong> — events with mean FRET at or below the
+low bound become the "Low" group, at or above the high bound become "High";
+anything in between is excluded as a middle/ambiguous group. Set
+<strong>Bootstrap N</strong>. The plot and stats update live as you adjust anything.</p>
+<p><strong>What it reports.</strong> The plot shows each group's individual event lifetimes
+as small jittered points (semi-transparent, so overlap reads as density),
+with a black square-and-error-bar marker showing that group's bootstrap
+mean ± 95% CI on top. The Statistics panel reports, at the event level:
+counts per group (and the excluded middle), the pooled lifetime mean/
+median/SD, each group's bootstrap mean/CI, and a Wilcoxon rank-sum p-value
+comparing the two groups' lifetime distributions (explicitly framed as
+exploratory, given the qualitative Low/High split this module makes). At
+the trace (molecule) level, it separately reports how many molecules
+qualify for only the Low group, only the High group, both, or neither — a
+molecule "qualifies" for a group if <em>any</em> of its events falls in it.</p>
+<p><strong>The math.</strong> The mean FRET per event is the average of that event's
+in-bound FRET values. The reported group mean and CI come from
+<code>pipeline.bootstrapMeanCI</code> — the same molecule-level cluster bootstrap
+principle as everywhere else in this app (resample molecules with
+replacement, include all of each drawn molecule's events in that group,
+recompute the mean, repeat), which is why a group needs at least 2 distinct
+molecules before the module shows a CI at all. The rank-sum test is
+nonparametric (no assumption that lifetimes are normally distributed,
+which they typically aren't), and the module runs it once on the actual
+Low/High event lifetimes directly.</p>
+<p><strong>Output guide.</strong> This module offers two separate exports:</p>
+<ul>
+<li><strong>Export CSV...</strong> — the full per-event table: <code>Sample</code>, <code>Analyzed
+  events</code>, <code>Molecule</code>, <code>Mean FRET</code>, <code>Lifetime (s)</code>, <code>Group</code> (one row per
+  event, including the excluded middle group). Useful if you want to
+  redo the statistics yourself, or plot the raw data differently.</li>
+<li><strong>Export Summary CSV...</strong> — one row of summary statistics per export:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Module</code>, <code>Dataset</code>, <code>EventFilter</code></td>
+<td>Channel and event filter</td>
+</tr>
+<tr>
+<td><code>LowBound</code>, <code>HighBound</code></td>
+<td>The Low/High mean-FRET thresholds used</td>
+</tr>
+<tr>
+<td><code>NMolecules_Total</code></td>
+<td>Distinct molecules contributing any event</td>
+</tr>
+<tr>
+<td><code>NEvents_Low</code>, <code>NEvents_Mid</code>, <code>NEvents_High</code></td>
+<td>Event counts in each group</td>
+</tr>
+<tr>
+<td><code>NBootstrap</code></td>
+<td>Bootstrap resamples requested (used for both groups)</td>
+</tr>
+<tr>
+<td><code>Lifetime_Low_Mean</code>, <code>Lifetime_Low_BootstrapCI</code>, <code>NMolecules_Low</code></td>
+<td>Low group's bootstrap mean lifetime, its CI, and its resampling pool size</td>
+</tr>
+<tr>
+<td><code>Lifetime_High_Mean</code>, <code>Lifetime_High_BootstrapCI</code>, <code>NMolecules_High</code></td>
+<td>Same, for the High group</td>
+</tr>
+<tr>
+<td><code>RankSum_p</code></td>
+<td>Wilcoxon rank-sum p-value, Low vs. High lifetimes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Save Binned Groups...</strong> additionally writes the High-only and Low-only
+molecules' full traces out as two separate <code>.mat</code> files (in the same format
+the app itself can load), for downstream analysis of those specific
+molecule subsets.</p>
+<h2>9. Event Sorting by Lifetime</h2>
+<p><img alt="Event Sorting by Lifetime" src="images/10_event_sorting_by_lifetime.png" /></p>
+<p><strong>Purpose.</strong> The mirror image of §8: splits binding events into
+Short/Long groups by their <strong>lifetime</strong>, then asks whether the two groups'
+<strong>FRET efficiency distributions</strong> differ.</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter, then set
+<strong>Short bound (≤)</strong> and <strong>Long bound (≥)</strong> in seconds. The plot shows both
+groups' FRET histograms on one shared axes (dark blue = Short, dark orange =
+Long) so they're directly comparable. Each group has its own Gaussian-mixture
+fit controls in its own sub-tab (<strong>Short Binding Events</strong> / <strong>Long Binding
+Events</strong>) — fit each independently; both fitted curves stay visible on the
+shared plot regardless of which sub-tab is active.</p>
+<p><strong>What it reports.</strong> Same fitting machinery as FRET Efficiency Distribution
+(§5): every frame of every qualifying event in a group contributes to that
+group's normalized 50-bin histogram, fit with a 1–4 component Gaussian
+mixture. The Statistics panel reports event and frame counts per group,
+plus the same High-only/Low-only/Both/Neither trace-level breakdown as §8
+(here, Short-only/Long-only/Both/Neither).</p>
+<p><strong>The math and the bootstrap.</strong> Identical to §5 in every respect — see that
+section for the model, the frame-pooling rationale, and the label-switching
+handling for multi-component fits.</p>
+<p><strong>Why Short and Long share one CSV.</strong> Unlike every other module, Short's
+and Long's Save Fit both log into the <strong>same</strong> result table (distinguished
+by the <code>Group</code> column) rather than two separate files — since they're the
+same underlying comparison split into two groups, keeping both in one file
+makes the intended Short-vs-Long comparison easy to do directly from the
+exported CSV.</p>
+<p><strong>Output guide</strong> (<code>Export CSV...</code>, available from either sub-tab — both
+write to the same table):</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Module</code>, <code>Dataset</code>, <code>EventFilter</code></td>
+<td>Channel and event filter</td>
+</tr>
+<tr>
+<td><code>Group</code></td>
+<td><code>"Short"</code> or <code>"Long"</code> — which group this row's fit is for</td>
+</tr>
+<tr>
+<td><code>FitType</code></td>
+<td>e.g. "1-Gaussian Mixture"</td>
+</tr>
+<tr>
+<td><code>NEvents</code></td>
+<td>True number of binding events in this group</td>
+</tr>
+<tr>
+<td><code>NFrames</code></td>
+<td>Pooled frames the histogram/fit was built from</td>
+</tr>
+<tr>
+<td><code>NMolecules</code>, <code>NBootstrap</code></td>
+<td>Bootstrap resampling pool size and resample count</td>
+</tr>
+<tr>
+<td><code>Mean1..Mean4</code>, <code>Std1..Std4</code> (+ <code>_FitCI</code>, <code>_BootstrapCI</code> each)</td>
+<td>Same as §5</td>
+</tr>
+<tr>
+<td><code>Population1..Population4</code> (+ <code>_BootstrapCI</code>)</td>
+<td>Same as §5</td>
+</tr>
+<tr>
+<td><code>R2</code></td>
+<td>Goodness of fit</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Save Binned Groups...</strong> works exactly as in §8, but based on the
+Short/Long lifetime split instead of the mean-FRET split.</p>
+<h2>10. Donor-Acceptor Correlation</h2>
+<p><img alt="Donor-Acceptor Correlation" src="images/11_donor_acceptor_correlation.png" /></p>
+<p><strong>Purpose.</strong> Is the raw donor/acceptor intensity behavior consistent with
+genuine FRET? Computes the within-event Pearson correlation between raw
+donor and acceptor intensities — energy transfer moves excitation from
+donor to acceptor, so a real FRET pair's intensities should anti-correlate
+(donor drops as acceptor rises, and vice versa) whenever the underlying
+conformation fluctuates. A lack of anti-correlation for a meaningful
+fraction of events can flag bleed-through, non-specific binding, or other
+artifacts worth investigating before trusting the FRET values those events
+produced.</p>
+<p><strong>How to use it.</strong> Assumes 2-color data: channel 1 is treated as the
+donor's raw intensity and channel 2 as the acceptor's, positionally —
+there's no separate Donor/Acceptor selector. Pick a <strong>Channel</strong> (which
+channel's events define the bound/unbound boundaries — typically the
+calculated FRET channel) and an <strong>Events</strong> filter, then set <strong>Min event
+frames</strong> (events shorter than this are excluded as too short to correlate
+meaningfully) and the two <strong>Ref line</strong> fields (default -0.5 / -0.7, shown
+as dashed/dotted reference lines on the plots — adjust to whatever
+anti-correlation threshold is meaningful for your system). Everything
+recomputes live.</p>
+<p><strong>What it reports.</strong> Three plots, always shown together:</p>
+<ul>
+<li><strong>Pearson r Histogram</strong> — probability-normalized histogram of each valid
+  event's Donor-Acceptor Pearson r, with the median r marked and the two
+  reference lines overlaid.</li>
+<li><strong>Pearson r: Points + Bootstrap CI</strong> — every valid event's r as a
+  jittered point, with a molecule-level cluster bootstrap median ± 95% CI
+  marker on top (the same points+CI <em>visual</em> convention as Event Sorting
+  by Mean FRET, §8 — see §2 for why resampling is done by molecule — but
+  summarizing the median here rather than the mean; see "The math" below).</li>
+<li><strong>Donor vs Acceptor (pooled)</strong> — every valid frame of every valid event,
+  donor intensity vs. acceptor intensity, with a corner-to-corner diagonal
+  reference.</li>
+</ul>
+<p>The Statistics panel below reports total/valid/invalid event counts, the
+number of distinct molecules contributing valid events, and the bootstrap
+median r ± CI.</p>
+<p><strong>The math.</strong> For each event, donor and acceptor raw intensity traces are
+pulled over its bound duration (onFrame:offFrame) and compared directly via
+Pearson's r — no smoothing, no detrending. An event is excluded (<code>Valid =
+false</code> in the per-event export) if it has fewer than <strong>Min event frames</strong>
+frames, or if either trace has zero variance over the event (a degenerate
+case Pearson's r can't be computed for). The summary statistic bootstrapped
+here is the <strong>median</strong>, not the mean like this app's other points+CI
+modules (e.g. Event Sorting by Mean FRET, §8) — Pearson r is bounded to
+[-1, 1] and often skewed for real data, so median is the more robust point
+estimate (<code>pipeline.bootstrapMedianCI</code>, the same molecule-level cluster
+resampling as <code>pipeline.bootstrapMeanCI</code> elsewhere, just summarizing each
+resample with <code>median()</code> instead of <code>mean()</code>).</p>
+<p><strong>Output guide.</strong> This module offers two separate exports, matching Event
+Sorting by Mean FRET's convention (§8) rather than the shared per-module
+result log — there's no curve fit here to log via Save Fit:</p>
+<ul>
+<li><strong>Export CSV...</strong> — the full per-event table: <code>Sample</code>, <code>Analyzed
+  events</code>, <code>Molecule</code>, <code>Event length (frames)</code>, <code>Donor-Acceptor Pearson r</code>,
+  <code>Valid</code> (one row per event, including invalid ones — <code>Donor-Acceptor
+  Pearson r</code> is blank/NaN for those). Useful if you want to redo the
+  statistics yourself or plot the raw per-event values differently.</li>
+<li><strong>Export Summary CSV...</strong> — one row of summary statistics per export:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Module</code>, <code>Dataset</code>, <code>EventFilter</code></td>
+<td>Channel and event filter</td>
+</tr>
+<tr>
+<td><code>MinEventFrames</code></td>
+<td>The minimum-frames cutoff used</td>
+</tr>
+<tr>
+<td><code>ReferenceLine1</code>, <code>ReferenceLine2</code></td>
+<td>The two reference-line r values used</td>
+</tr>
+<tr>
+<td><code>NEvents</code>, <code>NValid</code>, <code>NInvalid</code></td>
+<td>Event counts</td>
+</tr>
+<tr>
+<td><code>NMolecules_Valid</code></td>
+<td>Distinct molecules contributing valid events (bootstrap resampling pool size)</td>
+</tr>
+<tr>
+<td><code>Median_PearsonR</code>, <code>Median_PearsonR_BootstrapCI</code></td>
+<td>Bootstrap median r and its CI</td>
+</tr>
+<tr>
+<td><code>NBootstrap</code></td>
+<td>Bootstrap resamples requested</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Export Plot...</strong> writes all three plots as one matched set
+(<code>_histogram</code>/<code>_pointsCI</code>/<code>_donorVsAcceptor</code> suffixes appended to whatever
+base name you choose), the same one-button-for-multiple-plots convention as
+Association/Dissociation Conformations (§7).</p>
+<h2>11. Post-Sync FRET Heatmap</h2>
+<p><img alt="Post-Sync FRET Heatmap" src="images/04_post_sync_fret_heatmap.png" /></p>
+<p><strong>Purpose.</strong> A purely visual module (no fitting, no CSV export): shows how
+a channel's FRET efficiency evolves over time across an entire ensemble of
+events, aligned to each event's own binding onset.</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter. The module
+pulls every included event's <em>entire</em> trace (not just its bound portion)
+and time-aligns it so <code>t = 0</code> is that event's onset frame, bins each
+aligned time slice into a FRET-efficiency histogram, and renders the
+resulting time × FRET-efficiency matrix as a filled contour plot. The
+<strong>Parameters</strong> panel splits into three responsiveness tiers: <strong>Time bin</strong>,
+<strong>Intensity bins</strong>, Channel, and Events fully re-extract and re-bin the
+data; <strong>Smoothing</strong> toggles/retunes a 2D Gaussian smoothing pass on the
+already-binned matrix without re-binning; and <strong>Contour levels</strong>, color
+scale, and the time <strong>window</strong> are pure display parameters that replot
+instantly with no recomputation at all.</p>
+<p><strong>The math.</strong> Smoothing (<code>pipeline.smoothHeatmap2D</code>) is a separable 2D
+Gaussian convolution with edge-replicated padding (matching what
+<code>imgaussfilt</code> would do, without requiring the Image Processing Toolbox) —
+replicated rather than zero-padded edges matter here because real FRET mass
+often sits close to 0 or 1, and zero-padding would artificially dim the
+heatmap near those edges.</p>
+<h2>12. FRET Evolution</h2>
+<p><img alt="FRET Evolution" src="images/05_fret_evolution.png" /></p>
+<p><strong>Purpose.</strong> Another purely visual module: plots individual per-event FRET
+trajectories right after binding onset, as semi-transparent overlaid lines
+so the ensemble's density and spread are visible at a glance.</p>
+<p><strong>How to use it.</strong> Pick a <strong>Channel</strong> and <strong>Events</strong> filter. The module
+plots each qualifying event's bound-duration segment starting from its
+second frame — skipping the first and last frames of an event as likely
+transition artifacts — out to <strong>Max frames to plot</strong>, capped at
+<strong>Number of lines</strong> total traces. It colors each trace by its FRET value
+at the second frame, falling in the <strong>Orange range</strong> or <strong>Blue range</strong> you
+set (it skips events outside both ranges entirely), with <strong>Line
+transparency</strong> and <strong>Line width</strong> controlling how the overlay reads.</p>
+<h2>13. Combined Dataset Overlay</h2>
+<p><img alt="Combined Dataset Overlay" src="images/07_combined_dataset_overlay.png" /></p>
+<p><strong>Purpose.</strong> The only module that doesn't need a loaded state-assignment
+file at all: combines multiple previously-exported <code>.fig</code> plots (from this
+app's own <strong>Export Plot...</strong> buttons, or any <code>.fig</code> following the same
+open-circle-markers-for-data / plain-line-for-fit convention) into one
+publication-ready comparison figure — useful for putting the same kind of
+plot from different samples, conditions, or analysis sessions side by side.</p>
+<p><strong>How to use it.</strong> For each of up to 10 rows, click <strong>Load...</strong> to pick a
+<code>.fig</code> file, give it a sample name, and pick a display color. Click
+<strong>Combine &amp; Plot</strong> to read every configured row and overlay them (this is a
+deliberate button rather than a live update, since reading 10 files is
+nontrivial I/O you don't want repeated on every keystroke) — it recolors
+each sample's data markers and fit line to its assigned color, and
+standardizes everything else about their appearance so the combined figure
+looks like one consistent plot rather than a patchwork of each source
+file's original style. The module auto-fills axis labels from the first
+loaded file, though you can edit them; axis ranges, log/linear scale, and
+the legend are all live against the already-combined data, so changing
+them needs no file re-read.</p>
+<p><strong>Exporting.</strong> <strong>Export Publication Plot...</strong> applies this module's own
+fixed publication styling (a constant-size axes box, thin dark-gray axis
+lines, outward ticks, transparent background) — a different, dedicated
+style from the generic per-module <code>pipeline.exportPlot</code> used everywhere
+else in the app, since a combined-overlay figure has different presentation
+needs than a single module's own plot.</p>
+<h2>14. Summary Figure</h2>
+<p><img alt="Summary Figure" src="images/12_summary_figure.png" /></p>
+<p><strong>Purpose.</strong> A fast way to see everything at once: automatically finds
+every module's previously-exported plots in a chosen folder and assembles
+them into one multi-panel page, so you don't have to open a dozen separate
+exported images — or revisit every module one at a time — just to sanity-
+check a dataset.</p>
+<p><strong>How to use it.</strong> Like Combined Dataset Overlay (§13), this module doesn't
+need a loaded state-assignment file — it works entirely from <code>.png</code> files
+this app already exported, via any module's own <strong>Export Plot...</strong> button.
+Click <strong>Choose Folder...</strong> to pick the directory holding those exports,
+then <strong>Scan Folder</strong> — the Panels Found list shows, for every plot this app
+can produce, whether a matching file was found in that folder (<code>[x]</code>) or
+not (<code>[ ]</code>). Click <strong>Generate Summary</strong> to build the composite and preview
+it, then <strong>Export Summary Figure...</strong> to save it as both <code>.png</code> and <code>.eps</code>.</p>
+<p><strong>What it reports.</strong> Every module's exported <code>.png</code> is tagged,
+automatically, with a fixed filename suffix identifying which module (and,
+for a module that exports more than one distinct plot — Association/
+Dissociation Conformations' heatmap + frame-sweep, or Donor-Acceptor
+Correlation's three plots — which specific one) produced it. You never
+have to name files a particular way for this to work: whatever base name
+you typed when exporting, the suffix is appended automatically. <strong>Every
+matching file in the folder becomes its own panel</strong> — not just the most
+recent one. If you've exported the same plot type more than once with
+genuinely different content (a different channel, a different Events
+filter, both directions of Association/Dissociation Conformations...), all
+of those exports show up as separate, individually labeled panels (<code>A</code>,
+<code>B</code>, <code>C</code>... in the order scanned), rather than only the newest surviving.
+A plot type never exported into that folder is simply skipped — panel
+letters stay contiguous across however many panels were actually found.</p>
+<p>Panel size is fixed regardless of how many panels there are; the page
+grows taller (and the grid gains columns, up to four) to fit more of them,
+rather than shrinking panels down to squeeze onto a fixed page. This is
+deliberately built for scrolling through on a screen, not a single printed
+sheet — a folder with a lot of exports in it produces a correspondingly
+large page, which is fine.</p>
+<h3>Why raster, not vector</h3>
+<p>Each panel is placed as the exact pixels of the <code>.png</code> this app already
+exported — not reconstructed from the underlying plot data. An earlier
+version of this module instead rebuilt each panel from its <code>.fig</code> file's
+own graphics objects, so the composite's own <code>.eps</code> export could stay true
+vector throughout. That reconstruction couldn't perfectly reproduce every
+formatting detail this app's individual export was carefully tuned for
+(font scaling, line widths, alpha-blended semi-transparent traces,
+colorbar sizing...), and the composite visibly drifted from what the
+individual export actually looked like — defeating the point of a fast,
+trustworthy overview. Placing the <code>.png</code> as-is guarantees a summary panel
+looks identical to its individual export, at the cost of the composite's
+own <code>.eps</code> embedding a raster image per panel rather than re-vectorizing
+it.</p>
+<p><strong>Output guide.</strong> There's no CSV here — Summary Figure only ever reads
+other modules' already-exported <code>.png</code> files and writes a composite image.
+<strong>Export Summary Figure...</strong> saves that composite as both <code>.png</code> (600 DPI)
+and <code>.eps</code>.</p>
+</body></html>

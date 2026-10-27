@@ -7,7 +7,7 @@
     - `init_rst/` - initial coordinates for simulation in AMBER rst file format
     - `restraint_atoms/` - list of atoms to be harmonically restrained during production simulation. `txt` file formate.
     - `prod-restraint.py` - initalize an OpenMM production simulation with restraints applied.
-    - `prod-restraint.py` - restart an OpenMM simulation. 
+    - `prod-restart.py` - restart an OpenMM simulation. 
 
 ## Systems simulated
 
@@ -15,7 +15,7 @@
 | --- | --- | --- | 
 20251112_48S_eIF5_G29A_G31A_AUG | G29A/G31A | AUG| 
 20251112_48S_eIF5_N30K_AUG | N30K | AUG | 
-20251112_48S_eIF5_N30Q_AUG | N30A | AUG | 
+20251112_48S_eIF5_N30Q_AUG | N30Q | AUG | 
 20251112_48S_eIF5wt_ACG | WT | ACG | 
 20251112_48S_eIF5wt_AUC | WT | AUC | 
 20251112_48S_eIF5wt_AUG | WT | AUG | 
